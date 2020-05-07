@@ -1,0 +1,3 @@
+[submodule "torch-submod"]
+	path = torch-submod
+	url = git@github.com:ameya005/torch-submod.git
