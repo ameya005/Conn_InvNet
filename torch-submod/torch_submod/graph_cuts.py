@@ -13,7 +13,8 @@ from .blocks import blockwise_means, blocks_2d
 
 __all__ = ("TotalVariation2d", "TotalVariation2dWeighted", "TotalVariation1d")
 
-
+#device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 class TotalVariation2dWeighted(Function):
     r"""A two dimensional total variation function.
 
@@ -110,27 +111,27 @@ class TotalVariation2dWeighted(Function):
             ordered_vec = np.zeros_like(idx, dtype=np.float)
             ordered_vec[idx] = np.arange(np.size(opt))
             f = _linearize(ordered_vec.reshape(opt.shape),
-                                weights_row.detach().numpy(), weights_col.detach().numpy())
-            opt_idx = isotonic((x.view(-1).detach().numpy() - f.ravel())[idx])
+                                weights_row.cpu().detach().numpy(), weights_col.cpu().detach().numpy())
+            opt_idx = isotonic((x.view(-1).cpu().detach().numpy() - f.ravel())[idx])
             opt = np.zeros_like(opt_idx)
             opt[idx] = opt_idx
             return opt     
         
-        opt = tv1w_2d(x.detach().numpy(), weights_col.detach().numpy(), 
-                      weights_row.detach().numpy(), **self.tv_args)
+        opt = tv1w_2d(x.cpu().detach().numpy(), weights_col.cpu().detach().numpy(), 
+                      weights_row.cpu().detach().numpy(), **self.tv_args)
         if self.refine:
 #             opt = self._refine(opt, x, weights_row, weights_col)
             opt = _refine(opt, x, weights_row, weights_col)
         opt = torch.Tensor(opt).view_as(x)
         self.save_for_backward(opt)
-        return opt
+        return opt.to(device)
 
     def _grad_x(self, opt, grad_output):
         if self.average_connected:
-            blocks = blocks_2d(opt.detach().numpy())
+            blocks = blocks_2d(opt.cpu().detach().numpy())
         else:
-            _, blocks = np.unique(opt.detach().numpy().ravel(), return_inverse=True)
-        grad_x = blockwise_means(blocks.ravel(), grad_output.detach().numpy().ravel())
+            _, blocks = np.unique(opt.cpu().detach().numpy().ravel(), return_inverse=True)
+        grad_x = blockwise_means(blocks.ravel(), grad_output.cpu().detach().numpy().ravel())
         # We need the clone as there seems to e a double-free error in py27,
         # namely, torch free()s the array after numpy has already free()d it.
         return torch.from_numpy(grad_x).view(opt.size()).clone()
@@ -150,14 +151,14 @@ class TotalVariation2dWeighted(Function):
         
         def _grad_x(opt, grad_output):
             if self.average_connected:
-                blocks = blocks_2d(opt.detach().numpy())
+                blocks = blocks_2d(opt.cpu().detach().numpy())
             else:
-                _, blocks = np.unique(opt.detach().numpy().ravel(), return_inverse=True)
-            grad_x = blockwise_means(blocks.ravel(), grad_output.detach().numpy().ravel())
+                _, blocks = np.unique(opt.cpu().detach().numpy().ravel(), return_inverse=True)
+            grad_x = blockwise_means(blocks.ravel(), grad_output.cpu().detach().numpy().ravel())
             # We need the clone as there seems to e a double-free error in py27,
             # namely, torch free()s the array after numpy has already free()d it.
             
-            return torch.from_numpy(grad_x).view(opt.size()).clone()
+            return torch.from_numpy(grad_x).view(opt.size()).clone().to(device)
 
         
         def _grad_w_row(opt, grad_x):
@@ -181,7 +182,7 @@ class TotalVariation2dWeighted(Function):
         if self.needs_input_grad[2]:
             grad_weights_col = _grad_w_col(opt, grad_x)
 
-        return grad_x, grad_weights_row, grad_weights_col
+        return grad_x.to(device), grad_weights_row.to(device), grad_weights_col.to(device)
 
     def _refine(self, opt, x, weights_row, weights_col):
         """Refine the solution by solving an isotonic regression.
@@ -191,8 +192,8 @@ class TotalVariation2dWeighted(Function):
         ordered_vec = np.zeros_like(idx, dtype=np.float)
         ordered_vec[idx] = np.arange(np.size(opt))
         f = self._linearize(ordered_vec.reshape(opt.shape),
-                            weights_row.detach().numpy(), weights_col.detach().numpy())
-        opt_idx = isotonic((x.view(-1).detach().numpy() - f.ravel())[idx])
+                            weights_row.cpu().detach().numpy(), weights_col.cpu().detach().numpy())
+        opt_idx = isotonic((x.view(-1).cpu().detach().numpy() - f.ravel())[idx])
         opt = np.zeros_like(opt_idx)
         opt[idx] = opt_idx
         return opt
@@ -281,7 +282,7 @@ class TotalVariation2d(TotalVariation2dWeighted):
             The solution to the total variation problem, of shape ``(m, n)``.
         """
         assert w.size() == (1,)
-        opt = tv1_2d(x.detach().numpy(), w.detach().numpy()[0], **self.tv_args)
+        opt = tv1_2d(x.cpu().detach().numpy(), w.cpu().detach().numpy()[0], **self.tv_args)
 
         if self.refine:  # Should we improve it with isotonic regression.
             opt = self._refine(opt, x, w, w)
@@ -352,10 +353,10 @@ class TotalVariation1d(TotalVariation2dWeighted):
         """
         self.equal_weights = weights.size() == (1,)
         if self.equal_weights:
-            opt = tv1_1d(x.detach().numpy().ravel(), weights.detach().numpy()[0],
+            opt = tv1_1d(x.cpu().detach().numpy().ravel(), weights.cpu().detach().numpy()[0],
                          **self.tv_args)
         else:
-            opt = tv1w_1d(x.detach().numpy().ravel(), weights.detach().numpy().ravel(),
+            opt = tv1w_1d(x.cpu().detach().numpy().ravel(), weights.cpu().detach().numpy().ravel(),
                           **self.tv_args)
         opt = torch.Tensor(opt).view_as(x)
 
@@ -455,7 +456,7 @@ class TotalVariation1d(TotalVariation2dWeighted):
 #         :class:`torch:torch.Tensor`
 #             The solution to the total variation problem, of shape ``(m, n)``.
 #         """
-#         opt = tv1w_2d(x.cpu().detach().numpy(), weights_col.cpu().detach().numpy(), weights_row.cpu().detach().numpy(),
+#         opt = tv1w_2d(x.cpu().cpu().detach().numpy(), weights_col.cpu().cpu().detach().numpy(), weights_row.cpu().cpu().detach().numpy(),
 #                       **self.tv_args)
 #         if self.refine:
 #             opt = self._refine(opt, x, weights_row, weights_col)
@@ -465,10 +466,10 @@ class TotalVariation1d(TotalVariation2dWeighted):
 
 #     def _grad_x(self, opt, grad_output):
 #         if self.average_connected:
-#             blocks = blocks_2d(opt.cpu().detach().numpy())
+#             blocks = blocks_2d(opt.cpu().cpu().detach().numpy())
 #         else:
-#             _, blocks = np.unique(opt.cpu().detach().numpy().ravel(), return_inverse=True)
-#         grad_x = blockwise_means(blocks.ravel(), grad_output.cpu().detach().numpy().ravel())
+#             _, blocks = np.unique(opt.cpu().cpu().detach().numpy().ravel(), return_inverse=True)
+#         grad_x = blockwise_means(blocks.ravel(), grad_output.cpu().cpu().detach().numpy().ravel())
 #         # We need the clone as there seems to e a double-free error in py27,
 #         # namely, torch free()s the array after numpy has already free()d it.
 #         return torch.from_numpy(grad_x).view(opt.size()).clone()
@@ -504,8 +505,8 @@ class TotalVariation1d(TotalVariation2dWeighted):
 #         ordered_vec = np.zeros_like(idx, dtype=np.float)
 #         ordered_vec[idx] = np.arange(np.size(opt))
 #         f = self._linearize(ordered_vec.reshape(opt.shape),
-#                             weights_row.cpu().detach().numpy(), weights_col.cpu().detach().numpy())
-#         opt_idx = isotonic((x.view(-1).cpu().detach().numpy() - f.ravel())[idx])
+#                             weights_row.cpu().cpu().detach().numpy(), weights_col.cpu().cpu().detach().numpy())
+#         opt_idx = isotonic((x.view(-1).cpu().cpu().detach().numpy() - f.ravel())[idx])
 #         opt = np.zeros_like(opt_idx)
 #         opt[idx] = opt_idx
 #         return opt
@@ -594,7 +595,7 @@ class TotalVariation1d(TotalVariation2dWeighted):
 #             The solution to the total variation problem, of shape ``(m, n)``.
 #         """
 #         assert w.size() == (1,)
-#         opt = tv1_2d(x.cpu().detach().numpy(), w.cpu().detach().numpy()[0], **self.tv_args)
+#         opt = tv1_2d(x.cpu().cpu().detach().numpy(), w.cpu().cpu().detach().numpy()[0], **self.tv_args)
 
 #         if self.refine:  # Should we improve it with isotonic regression.
 #             opt = self._refine(opt, x, w, w)
@@ -665,10 +666,10 @@ class TotalVariation1d(TotalVariation2dWeighted):
 #         """
 #         self.equal_weights = weights.size() == (1,)
 #         if self.equal_weights:
-#             opt = tv1_1d(x.cpu().detach().numpy().ravel(), weights.cpu().detach().numpy()[0],
+#             opt = tv1_1d(x.cpu().cpu().detach().numpy().ravel(), weights.cpu().cpu().detach().numpy()[0],
 #                          **self.tv_args)
 #         else:
-#             opt = tv1w_1d(x.cpu().detach().numpy().ravel(), weights.cpu().detach().numpy().ravel(),
+#             opt = tv1w_1d(x.cpu().cpu().detach().numpy().ravel(), weights.cpu().cpu().detach().numpy().ravel(),
 #                           **self.tv_args)
 #         opt = torch.Tensor(opt).view_as(x)
 

@@ -180,14 +180,14 @@ class GoodGenerator(nn.Module):
         self.rb2 = ResidualBlock(8*self.dim, 4*self.dim, 3, resample = 'up')
         self.rb3 = ResidualBlock(4*self.dim, 2*self.dim, 3, resample = 'up')
         self.rb4 = ResidualBlock(2*self.dim, 1*self.dim, 3, resample = 'up')
-        self.rb5 = ResidualBlock(1*self.dim, 1*self.dim, 3, resample = 'up')
+        #self.rb5 = ResidualBlock(1*self.dim, 1*self.dim, 3, resample = 'up')
         self.bn  = nn.BatchNorm2d(self.dim)
 
-        self.conv1 = MyConvo2d(1*self.dim, CATEGORY, 3)     # THIS NEEDS TO BE CHANGED TO NUM CATEGORY
+        self.conv1 = MyConvo2d(1*self.dim, 1, 3)     # THIS NEEDS TO BE CHANGED TO NUM CATEGORY
         self.relu = nn.ReLU()
         #self.tanh = nn.Tanh()
         self.sigmoid = nn.Sigmoid()
-        self.softmax = nn.Softmax2d()
+#        self.softmax = nn.Softmax2d()
 
     def forward(self, input, lv):
         if lv is not None:
@@ -198,13 +198,13 @@ class GoodGenerator(nn.Module):
         output = self.rb2(output)
         output = self.rb3(output)
         output = self.rb4(output)
-        output = self.rb5(output)
+        #output = self.rb5(output)
         output = self.bn(output)
         output = self.relu(output)
         output = self.conv1(output)
-        # output = self.sigmoid(output)
-        output = self.softmax(output)
-        output = output.view(-1, self.output_dim)
+        output = self.sigmoid(output)
+        #output = self.softmax(output)
+        #output = output.view(-1, self.output_dim)
         return output
 
 class GoodDiscriminator(nn.Module):

@@ -34,7 +34,7 @@ def p1_fn(x, torch=True):
             return x.mean(dim=(1,2,3)).unsqueeze(1)
         else:
             #return x.mean(dim=(2,3))
-            return x[:, 0:-1, ...].mean(dim=(2,3))      # Dropping the very last channel.
+            return x[:, :, ...].mean(dim=(2,3))      # Dropping the very last channel.
     else:
         return x.mean(axis=(1,2,3))
 
