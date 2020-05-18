@@ -32,7 +32,8 @@ device = torch.device('cpu')
 class GraphCut(nn.Module):
     """
     Graphcut layer that predicts log of
-    weights given an input image
+    weights given an input image.
+    Exact optimization problem for TV.
     """
     def __init__(self):
         super().__init__()
@@ -44,6 +45,22 @@ class GraphCut(nn.Module):
         out = self.conv2(x)
         return out
         
+class GradLayer(nn.Module):
+    """
+    Convolution approx for tv layer
+    """
+    def __init__(self):
+        super().__init__()
+        ker_x = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float32)
+        self.kernel_x = nn.Parameter(torch.tensor(ker_x, requires_grad=False).unsqueeze(0).unsqueeze(1))
+        self.kernel_y = nn.Parameter(torch.tensor(ker_x.T, requires_grad=False).unsqueeze(0).unsqueeze(1))
+    
+    def forward(self, x):
+        x1 = F.conv2d(x, self.kernel_x, padding=1)
+        x2 = F.conv2d(x, self.kernel_y, padding=1)
+        out = torch.norm(x1, p=1) + torch.norm(x2, p=1)
+        return out
+
 
 def build_parser():
     parser = argparse.ArgumentParser()
@@ -95,17 +112,23 @@ def main():
 
     # Setup Generator and TV Regularizer
     gen = GoodGenerator(64, 64*64*1, ctrl_dim=1)
-    graphcut_l = GraphCut()
-
+    graphcut_row = GraphCut()
+    graphcut_col = GraphCut()
+    #graphcut_l = GradLayer()
     gen = gen.to(device)
     gen.apply(weights_init)
-    graphcut_l = graphcut_l.to(device)
+    graphcut_row = graphcut_row.to(device)
+    graphcut_col = graphcut_col.to(device)
 
-    opt_g = torch.optim.Adam(list(gen.parameters()) + list(graphcut_l.parameters()), lr=3e-4)
+    opt_g = torch.optim.Adam(list(gen.parameters()) + list(graphcut_row.parameters()) + list(graphcut_col.parameters()), lr=3e-4)
+    #opt_g = torch.optim.Adam(gen.parameters(), lr=3e-4)
     #opt_gcl = torch.optim.Adam(graphcut_l.parameters(), lr=3e-4)
     
     writer = SummaryWriter(outdir)
     ### Training
+    # For connectivity, we only assume 2N nonzero parameters. Threfore, there are
+    # two graphcut layers=> 1. generating N weights for rows, 2. generating n weights for columns.
+    # Similar to what is described in the paper.
     for epoch in range(args.epochs):
         z = torch.randn(args.batchsize, 128)
         p1 = torch.rand(args.batchsize, 1) * (args.area[1] - args.area[0]) + args.area[0]
@@ -117,16 +140,16 @@ def main():
         p1_loss = torch.norm(p1_fn(gen_imgs, True) - p1).mean()
         gen_regs = []
         #for i in range(args.batchsize):
-        w_img = graphcut_l(gen_imgs)
-        w_row = torch.exp(w_img[:,:,:, :-1])
-        w_col = torch.exp(w_img[:,:,:-1,:])
+        w_row = torch.exp(graphcut_row(gen_imgs)[:,:,:,:-1])
+        #w_row = torch.exp(w_img[:,:,:, :-1])
+        w_col = torch.exp(graphcut_col(gen_imgs)[:,:,:-1,:])
         #print(w_row.shape, w_col.shape)
         tmp_gen_reg = tv2dw.apply(gen_imgs[0, 0, ...], w_row[0,0,...], w_col[0,0,...])
-
+        #graph_loss = graphcut_l(gen_imgs)
         #graph_loss = 0.5 * torch.pow(tmp_gen_reg.to(device).unsqueeze(0).unsqueeze(1) - gen_imgs, 2).mean()
-        graph_loss = -torch.norm(tmp_gen_reg.to(device).unsqueeze(0).unsqueeze(1) - gen_imgs)
-        #graph_loss = torch.norm(tmp_gen_reg.to(device))
-        loss_val = p1_loss + graph_loss
+#        graph_loss = -torch.norm(tmp_gen_reg.to(device).unsqueeze(0).unsqueeze(1) - gen_imgs)
+        graph_loss = -torch.norm(tmp_gen_reg.to(device))
+        loss_val = p1_loss + 0.001 * graph_loss
         #print(p1_loss.shape)
         opt_g.zero_grad()
         loss_val.backward()
